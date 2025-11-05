@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from django.http import JsonResponse
 from django.urls import include, path, re_path
 
 from drf_spectacular.views import (
@@ -12,8 +13,15 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+
+def heartbeat(request):
+    """Health check endpoint for Railway and load balancers."""
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("__heartbeat__", heartbeat, name="heartbeat"),
     path("", include("core.urls")),
     path("", include("wopi.urls")),
 ]
