@@ -27,15 +27,16 @@ export const baseApiUrl = (apiVersion?: string) => {
   const origin = getOrigin();
   // Use NEXT_PUBLIC_API_VERSION if set (e.g., "drive/v1.0"), otherwise fall back to apiVersion param
   const fullVersion = process.env.NEXT_PUBLIC_API_VERSION || apiVersion || "v1.0";
-  // Remove 'v' prefix if present (handles both "drive/v1.0" and "v1.0")
-  const versionPath = fullVersion.startsWith("v") ? fullVersion : `v${fullVersion.split("/").pop() || "1.0"}`;
   // If API_VERSION contains a prefix (e.g., "drive/v1.0"), use it; otherwise use default pattern
   if (fullVersion.includes("/")) {
     // Full format: "drive/v1.0" -> "/api/drive/v1.0/"
     const [prefix, version] = fullVersion.split("/");
-    return `${origin}/api/${prefix}/v${version}/`;
+    // Ensure version has "v" prefix (remove if present, then add to avoid duplication)
+    const versionPart = version.startsWith("v") ? version : `v${version}`;
+    return `${origin}/api/${prefix}/${versionPart}/`;
   } else {
     // Legacy format: "v1.0" or "1.0" -> "/api/v1.0/"
+    const versionPath = fullVersion.startsWith("v") ? fullVersion : `v${fullVersion}`;
     return `${origin}/api/${versionPath}/`;
   }
 };
