@@ -151,10 +151,6 @@ class OIDCLogoutCallbackView(LaSuiteOIDCLogoutView):
     Verifies the state parameter and performs necessary logout actions.
     Note: Inherits from LaSuiteOIDCLogoutView to access redirect_url property.
     """
-    """
-    Custom logout callback view that handles the callback after logout from Keycloak.
-    Verifies the state parameter and performs necessary logout actions.
-    """
 
     http_method_names = ["get"]
 
