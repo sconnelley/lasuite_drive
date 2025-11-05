@@ -66,7 +66,15 @@ class Base(Configuration):
     LOAD_E2E_URLS = False
     USE_SWAGGER = False
 
-    API_VERSION = "v1.0"
+    API_VERSION = values.Value(
+        "v1.0", environ_name="API_VERSION", environ_prefix=None
+    )
+
+    @property
+    def API_VERSION_NUMBER(self):
+        """Extract version number from API_VERSION (handles 'drive/v1.0' or 'v1.0')."""
+        version = self.API_VERSION
+        return version.split('/')[-1] if '/' in version else version
 
     # Security
     ALLOWED_HOSTS = values.ListValue([])

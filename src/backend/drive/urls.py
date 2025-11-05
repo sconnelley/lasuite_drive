@@ -37,7 +37,7 @@ if settings.USE_SWAGGER or settings.DEBUG:
         path(
             f"api/{settings.API_VERSION}/swagger.json",
             SpectacularJSONAPIView.as_view(
-                api_version=settings.API_VERSION,
+                api_version=settings.API_VERSION_NUMBER,
                 urlconf="core.urls",
             ),
             name="client-api-schema",
