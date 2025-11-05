@@ -1,6 +1,8 @@
 """Drive core authentication views."""
 
 from django.conf import settings
+from django.contrib import auth
+from django.core.exceptions import SuspiciousOperation
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
@@ -89,7 +91,16 @@ class OIDCAuthenticationCallbackView(LaSuiteOIDCAuthenticationCallbackView):
 class OIDCLogoutView(LaSuiteOIDCLogoutView):
     """
     Custom logout view that prepends API prefix from API_VERSION to logout callback URL.
+    Also handles GET requests (frontend uses window.location.replace for logout).
     """
+
+    def get(self, request):
+        """Handle GET requests for logout (frontend uses window.location.replace)."""
+        # Call the parent's get method if it exists, otherwise use post logic
+        if hasattr(super(), 'get'):
+            return super().get(request)
+        # If parent doesn't have get, use post logic
+        return self.post(request)
 
     def construct_oidc_logout_url(self, request):
         """Override to prepend API prefix to logout callback URL."""
@@ -132,3 +143,39 @@ class OIDCLogoutView(LaSuiteOIDCLogoutView):
         request.session.save()
 
         return f"{oidc_logout_endpoint}?{urlencode(query)}"
+
+
+class OIDCLogoutCallbackView(LaSuiteOIDCLogoutView):
+    """
+    Custom logout callback view that handles the callback after logout from Keycloak.
+    Verifies the state parameter and performs necessary logout actions.
+    Note: Inherits from LaSuiteOIDCLogoutView to access redirect_url property.
+    """
+    """
+    Custom logout callback view that handles the callback after logout from Keycloak.
+    Verifies the state parameter and performs necessary logout actions.
+    """
+
+    http_method_names = ["get"]
+
+    def get(self, request):
+        """Handle the logout callback from Keycloak."""
+        # If user is not authenticated, redirect to logout URL
+        if not request.user.is_authenticated:
+            return HttpResponseRedirect(self.redirect_url)
+
+        # Verify state parameter
+        state = request.GET.get("state")
+        if state not in request.session.get("oidc_states", {}):
+            msg = "OIDC callback state not found in session `oidc_states`!"
+            raise SuspiciousOperation(msg)
+
+        # Clear state from session
+        del request.session["oidc_states"][state]
+        request.session.save()
+
+        # Perform Django logout
+        auth.logout(request)
+
+        # Redirect to final logout URL
+        return HttpResponseRedirect(self.redirect_url)
