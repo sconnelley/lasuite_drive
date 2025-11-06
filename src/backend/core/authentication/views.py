@@ -1,11 +1,16 @@
 """Drive core authentication views."""
 
+import logging
 from django.conf import settings
 from django.contrib import auth
 from django.core.exceptions import SuspiciousOperation
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+logger = logging.getLogger(__name__)
 
 from lasuite.oidc_login.views import (
     OIDCAuthenticationCallbackView as LaSuiteOIDCAuthenticationCallbackView,
@@ -170,8 +175,71 @@ class OIDCLogoutCallbackView(LaSuiteOIDCLogoutView):
         del request.session["oidc_states"][state]
         request.session.save()
 
-        # Perform Django logout
+        # Perform Django logout for current app (Drive)
         auth.logout(request)
+
+        # Also clear session in Docs backend for shared logout
+        # This ensures logging out of one app logs out of both
+        try:
+            # Get session cookies from request
+            docs_session_id = request.COOKIES.get('docs_sessionid')
+            if docs_session_id:
+                # Make internal request to Docs backend to clear its session
+                # Use Railway internal DNS: docs-backend.railway.internal
+                docs_backend_url = getattr(settings, 'DOCS_BACKEND_INTERNAL_URL', 
+                                          'http://docs-backend.railway.internal:8000')
+                docs_logout_url = f"{docs_backend_url}/api/docs/v1.0/internal-logout/"
+                
+                # Create POST request with the Docs session cookie
+                logout_data = b''  # Empty body for POST
+                logout_req = Request(docs_logout_url, data=logout_data, method='POST')
+                logout_req.add_header('Cookie', f'docs_sessionid={docs_session_id}')
+                
+                # Add internal secret header for authentication
+                internal_secret = getattr(settings, 'INTERNAL_LOGOUT_SECRET', None)
+                if internal_secret:
+                    logout_req.add_header('X-Internal-Logout-Secret', internal_secret)
+                
+                # Add any other headers that might be needed
+                logout_req.add_header('Content-Type', 'application/json')
+                logout_req.add_header('X-Forwarded-Proto', 'https')
+                logout_req.add_header('Host', request.get_host())
+                
+                # Make the request (fire and forget - don't wait for response)
+                try:
+                    urlopen(logout_req, timeout=2)
+                except URLError as e:
+                    # Log but don't fail - this is best-effort cross-app logout
+                    logger.warning(f"Failed to clear Docs session during logout: {e}")
+        except Exception as e:
+            # Log but don't fail - this is best-effort cross-app logout
+            logger.warning(f"Error clearing Docs session during logout: {e}")
 
         # Redirect to final logout URL
         return HttpResponseRedirect(self.redirect_url)
+
+
+class InternalLogoutView(LaSuiteOIDCLogoutView):
+    """
+    Internal logout endpoint for cross-app session clearing.
+    Accepts a session cookie and clears it. Protected by internal secret.
+    """
+    
+    http_method_names = ["post"]
+    
+    def post(self, request):
+        """Clear session for internal logout requests."""
+        # Verify internal secret (protect against external abuse)
+        internal_secret = getattr(settings, 'INTERNAL_LOGOUT_SECRET', None)
+        if internal_secret:
+            provided_secret = request.headers.get('X-Internal-Logout-Secret')
+            if provided_secret != internal_secret:
+                from django.http import HttpResponseForbidden
+                return HttpResponseForbidden("Invalid internal logout secret")
+        
+        # Clear session if user is authenticated
+        if request.user.is_authenticated:
+            auth.logout(request)
+        
+        from django.http import JsonResponse
+        return JsonResponse({"status": "ok"})
